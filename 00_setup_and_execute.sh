@@ -1,5 +1,5 @@
 #!/bin/bash
-export XDG_COFNIG_HOME=~/.config
+export XDG_CONFIG_HOME=~/.config
 
 run_dir=${HOME}/Sequences/run
 
