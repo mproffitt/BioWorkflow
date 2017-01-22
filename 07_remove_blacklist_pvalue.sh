@@ -7,9 +7,9 @@ bed_folder=${output_dir}/macs_pvalue
 bed_list=($(ls ${bed_folder}/*.narrowPeak))
 
 pvalue_clean_folder=${bed_folder}/clean
-mkdir ${pvalue_clean_folder}
+mkdir $pvalue_clean_folder
 
-blacklist=${output_dir}/../mouse/blacklist/mm9-blacklist.bed
+blacklist=${output_dir}/../mouse/blacklist/mm10-blacklist.bed
 
 # 1) remove blacklisted positions from narrowPeak files
 start_time=$(date +"%Y-%m-%d_%H_%M_%S")

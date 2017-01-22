@@ -2,7 +2,7 @@
 
 # Script to execute Bowtie and align to mouse genome mm10 using bowtie2
 #
-bowtie_index=${HOME}/Sequences/mouse/mm9/mm9/mm9
+bowtie_index=${HOME}/Sequences/mouse/mm9/mm9
 fastq_dir=${HOME}'/Sequences/2016-07-18/Unaligned'
 files=($(ls ${fastq_dir}/GL30*_RT*.gz))
 

@@ -11,7 +11,7 @@ touch ${command_log}
 
 range=250
 
-known_sizes=${output_dir}/../mouse/mm9/mm9.chrom.sizes
+known_sizes=${output_dir}/../mouse/mm10/mm10.chrom.sizes
 
 extended=${output_dir}/macs_pvalue/extended
 mkdir $extended

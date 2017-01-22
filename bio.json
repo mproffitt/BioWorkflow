@@ -1,0 +1,68 @@
+{
+    "manager": "csv",
+    "reporting": "docx",
+    "modules":[
+        "csv"
+    ],
+    "csv": {
+        "datapath": "{HOME}/Sequences/run/merge_pvalue/annotated/combined",
+        "input_files": [
+            "GL21_Hdac1.bed",
+            "GL21_Hdac2.bed",
+            "GL30_COREST.bed"
+        ],
+        "output_directory": "images",
+        "namespace": "bioinformatics"
+    },
+    "replacements":[],
+    "report": {
+        "path":     "bioinformatics",
+        "template": "templates/GreenTemplate.docx",
+        "datapath": "data",
+        "title":    "A test report",
+        "subtitle": "Generated bio-informatics pipeline",
+        "abstract": "Graphs and tables relating to gene overlaps",
+        "board_id": "",
+        "sections":[
+            {
+                "title": "Hd2Lox with Hd1",
+                "abstract":"",
+                "level": 1,
+                "structure": [
+                    {
+                        "type": "graph",
+                        "title": "Up-Set of Chromasone summary for 2 or more files",
+                        "content": {
+                            "width": 100,
+                            "graphtype": "upset",
+                            "structure": null,
+                            "query": {
+                                "query": "",
+                                "fields": ["gene_name", "start", "end", "read_count", "peak_id"],
+                                "max_results": false,
+                                "group_by": "gene_name",
+                                "collate": {
+                                    "method": "combinatorics",
+                                    "fields": ["gene_name", "start", "end", "read_count", "peak_id"],
+                                    "query": {
+                                        "inclusive": "(start_x >= (start_y - {left_limit}) and start_x <= (end_y - {right_limit}))",
+                                        "exclusive": "(start_x < (start_y - {left_limit}) | (end_x > (end_y - {right_limit})))"
+                                    },
+                                    "join": {
+                                        "method": "outer",
+                                        "column": "gene_name"
+                                    },
+                                    "limits": {
+                                        "corest": 300,
+                                        "gl21_hdac1": 300,
+                                        "gl21_hdac2": 300
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}

@@ -31,22 +31,22 @@ fac <- unique(as.character(sample.desc$key))
 
 
 for(i in 1:length(fac)){
-	ID = fac[i]
-	cat("Merging ", ID, "\n", sep="")
-	sel <- which(as.character(sample.desc[, "key"]) == ID)
-	in.bam = paste(file.path(input.dir, as.character(sample.desc[sel, "filename"])), collapse=" ")
-	outpath.sampleName = paste0(file.path(dest.dir, ID), ".bam")
+    ID = fac[i]
+    cat("Merging ", ID, "\n", sep="")
+    sel <- which(as.character(sample.desc[, "key"]) == ID)
+    in.bam = paste(file.path(input.dir, as.character(sample.desc[sel, "filename"])), collapse=" ")
+    outpath.sampleName = paste0(file.path(dest.dir, ID), ".bam")
 
-	mergeBam.cmd <- paste("samtools merge - ", in.bam, " | samtools sort -o ", outpath.sampleName, " - ", sep=" ")
-	print(mergeBam.cmd)
-	indexBam.cmd <- paste("samtools index ", outpath.sampleName, sep="")
+    mergeBam.cmd <- paste("samtools merge - ", in.bam, " | samtools sort -o ", outpath.sampleName, " - ", sep=" ")
+    print(mergeBam.cmd)
+    indexBam.cmd <- paste("samtools index ", outpath.sampleName, sep="")
 
-	system(mergeBam.cmd)
-	system(indexBam.cmd)
+    system(mergeBam.cmd)
+    system(indexBam.cmd)
 
-	write(ID, file=command.file, sep="\n", append=TRUE)
-	write(mergeBam.cmd, file=command.file, sep="\n", append=TRUE)
-	write(indexBam.cmd, file=command.file, sep="\n", append=TRUE)
-	write("\n", file=command.file, sep="\n", append=TRUE)
+    write(ID, file=command.file, sep="\n", append=TRUE)
+    write(mergeBam.cmd, file=command.file, sep="\n", append=TRUE)
+    write(indexBam.cmd, file=command.file, sep="\n", append=TRUE)
+    write("\n", file=command.file, sep="\n", append=TRUE)
 }
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 output_dir=${HOME}/Sequences/run
-bam_dir=${output_dir}/bam_merged
+bam_dir=${output_dir}/bam_merged/filtered
 
 merge_dir=${output_dir}/merge_pvalue
 bed_list=($(ls ${merge_dir}/*.bed))

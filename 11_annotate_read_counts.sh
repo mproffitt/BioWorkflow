@@ -10,23 +10,24 @@ sorted=${annotated}/sorted
 partial=${annotated}/part
 combined=${annotated}/combined
 
-mkdir ${read_count}
-mkdir ${annotated}
-mkdir ${sorted}
-mkdir ${partial}
-mkdir ${combined}
+#mkdir ${read_count}
+#mkdir ${annotated}
+#mkdir ${sorted}
+#mkdir ${partial}
+#mkdir ${combined}
 
 for file in $(ls ${merge_dir}/*_0.01_peaks_extended_250.bed); do
-    annotatePeaks.pl $file mm9 > ${annotated}/$(basename $file);
+    annotatePeaks.pl $file mm10 > ${annotated}/$(basename $file);
 done
 
 for file in $(ls ${read_count}/*.txt); do
     name=$(basename $file .txt);
-    sed 1d ${annotated}/${name}_0.01_peaks_extended_250.bed > ${partial}/${name}.bed;
+    sed 1d ${annotated}/${name}_remove_duplicates_0.01_peaks_extended_250.bed > ${partial}/${name}.bed;
 done
 
 for file in $(ls ${partial}/*.bed); do
-    sort -k2,2 -k3,3n -k4,4n $file > ${sorted}/$file;
+    name=$(basename $file)
+    sort -k2,2 -k3,3n -k4,4n $file > ${sorted}/$name;
 done
 
 for file in $(ls ${read_count}/*.txt); do 
