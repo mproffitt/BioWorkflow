@@ -1,27 +1,29 @@
 #!/bin/bash
 
-# Script to execute Bowtie and align to mouse genome mm10 using bowtie2
+# Script to execute Bowtie and align to the requested genome using bowtie2
 #
-bowtie_index=${HOME}/Sequences/mouse/mm9/mm9
-fastq_dir=${HOME}'/Sequences/2016-07-18/Unaligned'
-files=($(ls ${fastq_dir}/GL30*_RT*.gz))
+function run_bowtie()
+{
+    if [ -n "$1" ] ; then
+        echo "No input pattern provided"
+        exit 1
+    fi
+    local pattern=$1
 
-output_dir=${HOME}/Sequences/run
-sam_dir=${output_dir}/sam
-log_dir=${output_dir}/log
+    local files=($(ls ${FASTQ_DIR}/${pattern}))
+    local sam_dir="${RUN_DIR}/sam"
+    local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
+    local command_log="${LOG_DIR}/bowtie2Commands_${start_time}.txt"
 
-start_time=$(date +"%Y-%m-%d_%H_%M_%S")
+    touch ${command_log}
+    for file in ${files[*]}; do
+        local noext=${file%%_R1_001.fastq.gz}
+        local sample_name=$(basename ${noext})
+        local output=${sam_dir}/${sample_name}.sam
 
-command_log=${log_dir}/bowtie2Commands_${start_time}.txt
-touch ${command_log}
-
-for file in ${files[*]}; do
-    noext=${file%%_R1_001.fastq.gz}
-    sample_name=$(basename ${noext})
-    output=${sam_dir}/${sample_name}.sam
-
-    command="bowtie2 -p 4 -q -x ${bowtie_index} -U ${file}  -S ${output}"
-    echo "Triggering ${command}" | tee -a ${command_log}
-    time bowtie2 -p 16 -q -x ${bowtie_index} -U ${file} -S ${output} &>>${command_log}
-    sleep 5
-done
+        command="bowtie2 -p ${PROCESSORS} -q -x ${BOWTIE_INDEX} -U ${file}  -S ${output}"
+        echo "Triggering ${command}" | tee -a ${command_log}
+        time $command | tee -a ${command_log}
+        sleep 5
+    done
+}

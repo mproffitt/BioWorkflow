@@ -1,36 +1,30 @@
 #!/bin/bash
 
-output_dir=${HOME}/Sequences/run
 
-merge_dir=${output_dir}/merge_pvalue
-read_count=${merge_dir}/read_count
-annotated=${merge_dir}/annotated
+function annotate_read_counts()
+{
+    local merge_dir=${RUN_DIR}/merge_pvalue
+    local read_count=${merge_dir}/read_count
+    local annotated=${merge_dir}/annotated
 
-sorted=${annotated}/sorted
-partial=${annotated}/part
-combined=${annotated}/combined
+    local sorted=${annotated}/sorted
+    local partial=${annotated}/part
+    local combined=${annotated}/combined
+    local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
+    local command_log="${LOG_DIR}/annotate_read_counts_${start_time}.log"
 
-#mkdir ${read_count}
-#mkdir ${annotated}
-#mkdir ${sorted}
-#mkdir ${partial}
-#mkdir ${combined}
+    touch ${command_log}
+    for file in $(ls ${merge_dir}/*_${PRECISION}_peaks_extended_${EXTEND_RANGE}.bed); do
+        local command="annotatePeaks.pl $file ${STRAIN} > ${annotated}/$(basename $file)";
+        echo "Triggering '${command}'" | tee -a ${command_log}
+        time $command | tee -a ${command_log}
+    done
 
-for file in $(ls ${merge_dir}/*_0.01_peaks_extended_250.bed); do
-    annotatePeaks.pl $file mm10 > ${annotated}/$(basename $file);
-done
+    for file in $(ls ${read_count}/*.txt); do
+        local sname=$(basename $file .txt)
+        local name=${sname}_remove_duplicates_${PRECISION}_peaks_extended_${EXTEND_RANGE}.bed
 
-for file in $(ls ${read_count}/*.txt); do
-    name=$(basename $file .txt);
-    sed 1d ${annotated}/${name}_remove_duplicates_0.01_peaks_extended_250.bed > ${partial}/${name}.bed;
-done
-
-for file in $(ls ${partial}/*.bed); do
-    name=$(basename $file)
-    sort -k2,2 -k3,3n -k4,4n $file > ${sorted}/$name;
-done
-
-for file in $(ls ${read_count}/*.txt); do 
-    name=$(basename $file .txt);
-    awk -v filename=$file '{ getline v < filename ; split( v, a ); print a[2],"\t"$0 }' ${sorted}/${name}.bed > ${combined}/${name}.bed;
-done
+        sed 1d ${annotated}/${name} | sort -k2,2 -k3,3n -k4,4n $file > ${sorted}/${sname}
+        awk -v filename=$file '{ getline v < filename ; split( v, a ); print a[2],"\t"$0 }' ${sorted}/${sname}.bed > ${combined}/${sname}.bed
+    done
+}

@@ -1,34 +1,31 @@
 #!/bin/bash
 
-output_dir=${HOME}/Sequences/run
-log_dir=${output_dir}/log
+function _extend()
+{
+    local peak_type=$1
+    local bed_dir=${RUN_DIR}/macs_pvalue/clean
+    local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
+    local command_log=${LOG_DIR}/extend_${peak_type}_${start_time}.txt
+    local known_sizes=${RUN_DIR}/../${GENOME}/${STRAIN}/${STRAIN}.chrom.sizes
+    local extended=""
 
-bed_dir=${output_dir}/macs_pvalue/clean
+    touch ${command_log}
+    local files=($(ls ${bed_dir}/*_${peak_type}_clean.bed))
+    for file in ${files[*]}; do
+        local filename=$(basename $file _${peak_type}_clean.bed)
+        local edited=${filename}_extended_${EXTEND_RANGE}.bed
 
-start_time=$(date +"%Y-%m-%d_%H_%M_%S")
-command_log=${log_dir}/extend_narrowPeak_${start_time}.txt
-touch ${command_log}
+        local command="bedtools slop -i ${file} -b ${EXTEND_RANGE} -g ${known_sizes} |"
+        command="${command} bedtools merge -i - > ${extended}/${edited}"
 
-range=250
+        echo "Triggering '${command}'" | tee -a ${command_log}
+        time $command | tee -a ${command_log}
+    done
+}
 
-known_sizes=${output_dir}/../mouse/mm10/mm10.chrom.sizes
+function extend_pvalue()
+{
+    _extend "narrowPeak"
+    _extend "summits"
+}
 
-extended=${output_dir}/macs_pvalue/extended
-mkdir $extended
-
-bed_list=($(ls ${bed_dir}/*_narrowPeak_clean.bed))
-for file in ${bed_list[*]}; do
-    filename=$(basename $file _narrowPeak_clean.bed)
-    edited=${filename}_extended_${range}.bed
-    echo "Triggering 'bedtools slop -i ${file} -b ${range} -g ${known_sizes} | bedtools merge -i - > ${extended}/${edited}'" | tee -a ${command_log}
-    time bedtools slop -i ${file} -b ${range} -g ${known_sizes} | bedtools merge -i - > ${extended}/${edited}
-done
-
-command_log=${log_dir}/extend_summits_${start_time}.txt
-bed_list=($(ls ${bed_dir}/*_summits_clean.bed))
-for file in ${bed_list[*]}; do
-    filename=$(basename $file _summits_clean.bed)
-    edited=${filename}_extended_${range}.bed
-    echo "Triggering 'bedtools slop -i ${file} -b ${range} -g ${known_sizes} | bedtools merge -i - > ${extended}/${edited}'" | tee -a ${command_log}
-    time bedtools slop -i ${file} -b ${range} -g ${known_sizes} | bedtools merge -i - > ${extended}/${edited}
-done

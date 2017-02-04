@@ -1,56 +1,54 @@
 #!/bin/bash
 
-output_dir=${HOME}/Sequences/run
-log_dir=${output_dir}/log
+function _blacklist()
+{
+    local peak_type=$1
+    local bed_folder=${RUN_DIR}/macs_pvalue
+    local pvalue_clean_folder=${bed_folder}/clean
 
-bed_folder=${output_dir}/macs_pvalue
-bed_list=($(ls ${bed_folder}/*.narrowPeak))
+    local blacklist=${RUN_DIR}/../${GENOME}/blacklist/${STRAIN}-blacklist.bed
 
-pvalue_clean_folder=${bed_folder}/clean
-mkdir $pvalue_clean_folder
+    local bed_list=($(ls ${bed_folder}/*.${peak_type}))
+    local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
 
-blacklist=${output_dir}/../mouse/blacklist/mm10-blacklist.bed
+    local command_log=${LOG_DIR}/remove_blacklist_${peak_type}_${start_time}.txt
+    touch ${command_log}
+    for file in ${bed_list[*]}; do
+        local filename=$(basename ${file} .${peak_type})
+        local edited=${filename}_${peak_type}_clean.bed
 
-# 1) remove blacklisted positions from narrowPeak files
-start_time=$(date +"%Y-%m-%d_%H_%M_%S")
-command_log=${log_dir}/remove_blacklist_narrowPeak_${start_time}.txt
-touch ${command_log}
-for file in ${bed_list[*]}; do
-    filename=$(basename ${file} .narrowPeak)
-    edited=${filename}_narrowPeak_clean.bed
-    echo "Triggering 'bedtools intersect -a ${file} -b ${blacklist} -v > ${pvalue_clean_folder}/${edited}'" | tee -a ${command_log}
-    time bedtools intersect -a ${file} -b ${blacklist} -v > ${pvalue_clean_folder}/${edited}
-done
+        command="bedtools intersect -a ${file} -b ${blacklist} -v > ${pvalue_clean_folder}/${edited}"
+        echo "Triggering '$command'" | tee -a ${command_log}
+        time $command
+    done
+}
 
-bed_list=($(ls ${bed_folder}/*_summits.bed))
-# 2) remove blacklisted positions from summits files
-command_log=${log_dir}/remove_blacklist_summits_${start_time}.txt
-touch ${command_log}
-for file in ${bed_list[*]}; do
-    filename=$(basename ${file} _summits.bed)
-    edited=${filename}_summits_clean.bed
-    echo "Triggering 'bedtools intersect -a ${file} -b ${blacklist} -v > ${pvalue_clean_folder}/${edited}'" | tee ${command_log}
-    time bedtools intersect -a ${file} -b ${blacklist} -v > ${pvalue_clean_folder}/${edited}
-done
-# 2) Remove blacklisted position in xls output files
-#    Also removes redundant header lines
-xls_list=($(ls ${bed_folder}/*.xls))
+function remove_blacklist()
+{
+    _blacklist narrowPeak
+    _blacklist summits
 
-command_log=${log_dir}/remove_blacklist_peaks_and_summits_xls_${start_time}.txt
-touch ${command_log}s
-for file in ${xls_list[*]}; do
-    filename=$(basename ${file} .xls)
-    # sed breakdown:
-    # The following sed command deletes everything that starts with # or is empty line
-    #     x -> exchange pattern and hold buffer
-    #     /^#\|^$/ -> search for lines beginning with # symbol
-    #              -> or empty lines
-    #     !g -> Copy hold space into pattern buffer
-    #     !p -> don't print anything in current pattern space (e.g, delete everything that is in hold space)
-    sed -n 'x;/^#\|^$/!g;//!p' ${file} > ${pvalue_clean_folder}/${filename}_edited.xls
-    
-    echo "Triggering 'bedtools intersect -a ${pvalue_clean_folder}/${filename}_edited.xls -b ${blacklist} -v > ${pvalue_clean_folder}/${filename}.xls'" | tee -a ${command_log}
-    time bedtools intersect -a ${pvalue_clean_folder}/${filename}_edited.xls -b ${blacklist} -v > ${pvalue_clean_folder}/${filename}.xls
-    rm ${pvalue_clean_folder}/${filename}_edited.xls
-done
+    local bed_folder=${RUN_DIR}/macs_pvalue
+    local xls_list=($(ls ${bed_folder}/*.xls))
+
+    command_log=${LOG_DIR}/remove_blacklist_peaks_and_summits_xls_${start_time}.txt
+    touch ${command_log}s
+    for file in ${xls_list[*]}; do
+        filename=$(basename ${file} .xls)
+        # sed breakdown:
+        # The following sed command deletes everything that starts with # or is empty line
+        #     x -> exchange pattern and hold buffer
+        #     /^#\|^$/ -> search for lines beginning with # symbol
+        #              -> or empty lines
+        #     !g -> Copy hold space into pattern buffer
+        #     !p -> don't print anything in current pattern space (e.g, delete everything that is in hold space)
+        sed -n 'x;/^#\|^$/!g;//!p' ${file} > ${pvalue_clean_folder}/${filename}_edited.xls
+
+        local command="bedtools intersect -a ${pvalue_clean_folder}/${filename}_edited.xls"
+        command="$comamnd -b ${blacklist} -v > ${pvalue_clean_folder}/${filename}.xls"
+
+        echo "Triggering '${command}'" | tee -a ${command_log}
+        time $command && rm ${pvalue_clean_folder}/${filename}_edited.xls
+    done
+}
 
