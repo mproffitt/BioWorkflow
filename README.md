@@ -1,2 +1,2 @@
-# BioWorkflow
-Standard workflow for Bio-informatics
+# Workflow for ChIPSeq Analyis
+
