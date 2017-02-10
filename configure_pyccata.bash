@@ -1,5 +1,18 @@
-#!/bin/bash
 
+[ -z "${INPUT_DIR}" ] && INPUT_DIR=${RUN_DIR}/merge_pvalue/${FILTERED}annotated/combined
+INPUT_FILES=(
+    $(find -P ${INPUT_DIR} -type f -exec basename {} \; )
+)
+
+LIMITS=(
+    $(find -P ${INPUT_DIR} -type f -exec basename {} \; |
+        tr '[:upper:]' '[:lower:]' | cut -d. -f1 | awk -F_ '{print $NF}' |
+            xargs | awk -v extended="250" '{ for(i = 1; i <= NF; i++) { print $i":" extended; } }'
+    )
+)
+
+[ ! -z "$FILTERED" ] && FILTERED="/$FILTERED"
+echo "Creating config file"
 read -r -d '' CONFIG <<EOF
 {
     "manager": "csv",
@@ -8,7 +21,7 @@ read -r -d '' CONFIG <<EOF
         "csv"
     ],
     "csv": {
-        "datapath": "${RUN_DIR}/merge_pvalue/annotated/combined",
+        "datapath": "${INPUT_DIR}",
         "input_files": [
             $(
                 for (( i=0; i < ${#INPUT_FILES[@]}; i++ )); do
@@ -21,11 +34,15 @@ read -r -d '' CONFIG <<EOF
                 done
             )
         ],
-        "output_directory": "overlap_output",
+        "output_directory": "overlap_output${FILTERED}",
         "namespace": "bioinformatics"
     },
     "replacements":[],
     "report": {
+        "datapath": "data",
+        "title": "",
+        "subtitle": "",
+        "abstract": "",
         "sections":[
             {
                 "title": "Hd2Lox with Hd1",

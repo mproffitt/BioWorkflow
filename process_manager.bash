@@ -18,39 +18,7 @@
 #   3. Full block.   - Commands can block the whole queue until they have completed.
 #
 
-##
-# Helper method for finding the location of sourced scripts
-#
 
-if ! typeset -f _find_parent_dir &>/dev/null; then
-    function _find_parent_dir()
-    {
-        if [ "$0" = '-bash' ]; then
-            __SCRIPTS_DIR=$(dirname ${BASH_SOURCE[$(expr ${#BASH_SOURCE[@]} - 1)]})
-        fi
-        if [ -z $__SCRIPTS_DIR ] ; then
-            [ "$(dirname $0)" = '.' ] && __SCRIPTS_DIR=$(pwd) || __SCRIPTS_DIR=$(dirname $0);
-            ls -l $__SCRIPTS_DIR | grep -q ^l && __SCRIPTS_DIR=$(dirname `ls -l $__SCRIPTS_DIR | awk '{print $NF}'`);
-        fi
-        export __SCRIPTS_DIR=$(echo "$__SCRIPTS_DIR" | sed -e 's,\\,/,g');
-    }
-fi
-
-##
-# Source any required scripts
-if [ -z ${PROCESSORS} ] ; then
-    _find_parent_dir
-    if [ ! -f $__SCRIPTS_DIR/configure.bash ] ; then
-        echo "Configuration script cannot be found. Please create one at '$__SCRIPTS_DIR'" >&2
-        exit 1
-    fi
-    source $__SCRIPTS_DIR/configure.bash
-fi
-
-if ! typeset -f create_structure &>/dev/null ; then
-    _find_parent_dir
-    [ -f $__SCRIPTS_DIR/functions.bash ] && source $__SCRIPTS_DIR/functions.bash
-fi
 
 ##
 # Reset the queue back to a clean state.
@@ -60,6 +28,7 @@ fi
 #
 function reset_queue()
 {
+    [ -z ${MANAGER_RUNNING} ] && export MANAGER_RUNNING=0
     if [ $MANAGER_RUNNING -eq 0 ]; then
         until _queue_complete -eq 0; do
             _monitor
@@ -372,9 +341,10 @@ function _kill_tree()
     local pid=$1
     kill -stop ${pid}
     for child in $(ps -o pid --no-headers --ppid ${pid}); do
-        kill_tree $child
+        _kill_tree $child
     done
     kill -SIGKILL ${pid}
 }
 
 trap "kill_all" EXIT
+reset_queue
