@@ -214,6 +214,7 @@ function block()
     queue_id=$1
     wait_for $queue_id 'process'
     STATUSES[$queue_id]='Complete'
+    export ACTIVE=$(expr $ACTIVE - 1)
 }
 
 ##
@@ -246,7 +247,7 @@ function kill_all()
 function _monitor()
 {
     for (( i=0; i < ${#STATUSES[@]}; i++ )); do
-        if [ "${STATUSES[$i]}" = 'Running' ] && ! kill -0 ${PROCESSES[$i]} &>/dev/null; then
+        if [ ! -z ${PROCESSES[$i]} ] && ! kill -0 ${PROCESSES[$i]} &>/dev/null; then
             STATUSES[$i]='Complete'
             export ACTIVE=$(expr $ACTIVE - 1)
         fi
@@ -286,7 +287,7 @@ function _exec()
             touch $logfile
         fi
         echo "Triggering process ${queue_id} '${command}'" | tee -a $logfile
-        eval "(${command} | tee -a ${logfile}) &"
+        eval "((${command}) 2>&1 | tee -a ${logfile}) &"
         RETURN_CODES[$queue_id]=$?
     else
         echo "Triggering process ${queue_id} '${command}'"

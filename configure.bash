@@ -13,7 +13,7 @@ export PRECISION='0.01'
 
 export LOCATION="${HOME}/Sequences"
 
-export BOWTIE_INDEX="${LOCATION}/${GENOME}/${GENOME_VERSION}/${GENOME_VERSION}"
+export BOWTIE_INDEX="${LOCATION}/${GENOME}/${GENOME_VERSION}/$(echo ${GENOME_VERSION} | cut -d- -f1)"
 export FASTQ_DIR="${LOCATION}/${RUN_DATE}/Unaligned"
 
 export RUN_DIR=${LOCATION}/run
