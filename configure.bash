@@ -1,22 +1,24 @@
 #!/bin/bash
 #
 # Configuration for the BioInformatics workflow
+export DISABLE_PYCCATA=1
 
 export GENOME='mouse'
 export GENOME_VERSION='mm10'
-export RUN_DATE='2017-02-04'
-export PICARD_VERSION='2.5.0'
+export RUN_DATE='2021-02-01'
+export PICARD_VERSION='2.24.1'
 export XDG_CONFIG_HOME=~/.config
-export EXTEND_RANGE=250
-export MERGE_RANGE=100
-export PRECISION='0.01'
+export EXTEND_RANGE=1
+export MERGE_RANGE=1
+export PRECISION='0.0085'
+export INPUTFILTER='IgG'
 
-export LOCATION="${HOME}/Sequences"
+export LOCATION="/home/mproffitt/2021-01-26_ACD5RFANXX"
 
 export BOWTIE_INDEX="${LOCATION}/${GENOME}/${GENOME_VERSION}/$(echo ${GENOME_VERSION} | cut -d- -f1)"
 export FASTQ_DIR="${LOCATION}/${RUN_DATE}/Unaligned"
 
-export RUN_DIR=${LOCATION}/run
+export RUN_DIR=${LOCATION}/run-${RUN_DATE}
 export LOG_DIR=${RUN_DIR}/log
 export PICARD_LOCATION="${LOCATION}/tools/picard-tools-${PICARD_VERSION}/picard.jar"
 export PROCESSORS=$(grep processor /proc/cpuinfo | wc -l)

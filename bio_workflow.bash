@@ -21,7 +21,7 @@
 #
 # pyccata can be disabled by defining an environment variable of `DISABLE_PYCCATA=1`
 #
-source ~/scripts/functions.bash
+source functions.bash
 
 # Temporary until pyccata is complete
 function setup_pyccata()
@@ -64,6 +64,7 @@ function check_bowtie_pattern()
     if ! find -P ${FASTQ_DIR} -maxdepth 2 -type f | grep -q $1; then
         echo "Input pattern for bowtie does not recognise any files" >&2
         echo "Please check the pattern and try again"
+        echo "Input pattern is: '$1' (${FASTQ_DIR})"
         exit 1
     fi
 }
@@ -94,13 +95,10 @@ function execute()
 {
     unset INPUT_DIR
     local filter=''
-    if [ ! -z $1 ] && [ "$1" = '-f' ]; then
-        echo "In filter config"
-        # reset filter location
-        export FILTERED='filtered/'
-        create_structure
-        shift
-    fi
+
+    [ ! -d ${RUN_DIR} ] && mkdir ${RUN_DIR}
+    [ ! -d ${RUN_DIR}/log ] && mkdir ${RUN_DIR}/log
+    [ ! -d ${RUN_DIR}/tmp ] && mkdir ${RUN_DIR}/tmp
 
     local bowtie_pattern=$1
     shift
@@ -112,28 +110,45 @@ function execute()
     if [ ${#bam_filter[@]} -gt 0 ]; then
         check_bam_filter_patterns $@
     fi
-    if [ -z $FILTERED ] || ([ ! -z $FILTERED ] && [ $(ls ${RUN_DIR}/sam | wc -l) -eq 0 ]) ; then
+    if [ ! -d ${RUN_DIR}/00sam ] || [ $(ls ${RUN_DIR}/00sam | wc -l) -eq 0 ]; then
         run_bowtie $bowtie_pattern
-        sam_to_bam
-        merge_bam_files $bam_filter
     fi
 
-    if [ ! -z $FILTERED ] ; then
+    if [ ! -d ${RUN_DIR}/01bam ] || [ $(ls ${RUN_DIR}/01bam | wc -l) -eq 0 ]; then
+        sam_to_bam
+    fi
+
+    if [ ! -d ${RUN_DIR}/02filtered ] || [ $(ls ${RUN_DIR}/02filtered | wc -l) -eq 0 ]; then
         filter
     fi
-    remove_duplicates
-    macs_pvalue ${PRECISION}
-    remove_blacklist
-    extend_pvalue
-    merge_pvalue
-    read_counts
-    annotate_read_counts
-    process_queue
-    if [ ! -z $DISABLE_PYCCATA ]; then
-        setup_pyccata
-        cd ${RUN_DIR}
-        ${HOME}/$__SCRIPTS_DIR/annotation.py
-        cd ${HOME}
+
+    if [ ! -d ${RUN_DIR}/03unique ] || [ $(ls ${RUN_DIR}/03unique | wc -l) -eq 0 ]; then
+        remove_duplicates
     fi
+
+    if [ ! -d ${RUN_DIR}/04macs_pvalue ] || [ $(ls ${RUN_DIR}/04macs_pvalue | wc -l) -eq 0 ]; then
+        macs_pvalue ${PRECISION}
+    fi
+
+
+    if [ ! -d ${RUN_DIR}/05clean ] || [ $(ls ${RUN_DIR}/05clean | wc -l) -eq 0 ]; then
+        remove_blacklist
+    fi
+
+    if [ ! -d ${RUN_DIR}/06extended ] || [ $(ls ${RUN_DIR}/06extended | wc -l) -eq 0 ]; then
+        extend_pvalue
+    fi
+
+    if [ ! -d ${RUN_DIR}/07merge_pvalue ] || [ $(ls ${RUN_DIR}/07merge_pvalue | wc -l) -eq 0 ]; then
+        merge_pvalue
+    fi
+
+    if [ ! -d ${RUN_DIR}/08read_count ] || [ $(ls ${RUN_DIR}/08read_count | wc -l) -eq 0 ]; then
+        read_counts
+    fi
+    if [ ! -d ${RUN_DIR}/09annotated ] || [ $(ls ${RUN_DIR}/09annotated| wc -l) -eq 0 ]; then
+        annotate_read_counts
+    fi
+    process_queue
 }
 

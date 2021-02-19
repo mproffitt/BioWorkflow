@@ -5,10 +5,13 @@ function _find_parent_dir()
     if [ "$0" = '-bash' ]; then
         __SCRIPTS_DIR=$(dirname ${BASH_SOURCE[$(expr ${#BASH_SOURCE[@]} - 1)]})
     fi
+    echo "1 = __SCRIPTS_DIR='$__SCRIPTS_DIR'"
     if [ -z $__SCRIPTS_DIR ] ; then
         [ "$(dirname $0)" = '.' ] && __SCRIPTS_DIR=$(pwd) || __SCRIPTS_DIR=$(dirname $0);
-        ls -l $__SCRIPTS_DIR | grep -q ^l && __SCRIPTS_DIR=$(dirname `ls -l $__SCRIPTS_DIR | awk '{print $NF}'`);
+        echo "2 = __SCRIPTS_DIR='$__SCRIPTS_DIR'"
+        #ls -l $__SCRIPTS_DIR | grep -q ^l && __SCRIPTS_DIR=$(dirname `ls -l $__SCRIPTS_DIR | awk '{print $NF}'`);
     fi
+    echo "3 = __SCRIPTS_DIR='$__SCRIPTS_DIR'"
     export __SCRIPTS_DIR=$(echo "$__SCRIPTS_DIR" | sed -e 's,\\,/,g');
 }
 
@@ -22,29 +25,34 @@ if ! typeset -f queue ; then
     source $__SCRIPTS_DIR/process_manager.bash
 fi
 
-##
-# Execute Bowtie2 to align input files to the requested genome
-#
 function run_bowtie()
 {
+    echo "PATTERN IS $1"; echo; echo;
     if [ -z "$1" ] ; then
         echo "No input pattern provided"
-        exit 1
+        return 1
     fi
 
     local pattern=$1
     local files=($(find -P ${FASTQ_DIR} -maxdepth 2 -type f | grep ${pattern}))
-    local sam_dir="${RUN_DIR}/sam"
+    local sam_dir="${RUN_DIR}/00sam"
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
-    local command_log="${LOG_DIR}/bowtie2Commands_${start_time}.txt"
+    local command_log="${LOG_DIR}/bowtie2Commands_${start_time}"
 
-    for file in ${files[*]}; do
-        local noext=${file%%_R1_001.fastq.gz}
-        local sample_name=$(basename ${noext})
-        local output=${sam_dir}/${sample_name}.sam
+    mkdir -p ${sam_dir}
 
-        command="bowtie2 -p ${PROCESSORS} -q -x ${BOWTIE_INDEX} -U ${file}  -S ${output}"
-        queue "${command}" "${command_log}" "block=true"
+    echo "Building list ${files[@]}"
+    for sample in $(for file in ${files[@]}; do echo $(basename ${file%%_read*.fastq.gz}); done | sort | uniq); do
+        local command="bowtie2 --local --very-sensitive --no-unal --no-mixed --no-discordant --phred33 -I 10 -X 700 -p ${PROCESSORS} -q -x ${BOWTIE_INDEX}"
+
+        let i=1
+        for match in $(ls ${FASTQ_DIR}/$sample*); do
+            command="${command} -${i} ${match}"
+            let i=$i+1
+        done;
+        command="${command} -S ${sam_dir}/${sample}.sam"
+        echo "Triggering ${command}"; echo
+        queue "${command}" "${command_log}_${sample}.txt" "block=true"
     done
     process_queue
 }
@@ -53,70 +61,27 @@ function run_bowtie()
 # Convert sam file format to BAM format
 function sam_to_bam()
 {
-    local sam_dir=${RUN_DIR}/sam
+    local sam_dir=${RUN_DIR}/00sam
     local files=($(ls ${sam_dir}/*.sam))
-    local bam_dir=${RUN_DIR}/bam_lanewise
+    local bam_dir=${RUN_DIR}/01bam
     local tmp_dir=${RUN_DIR}/tmp
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
     local command_log="${LOG_DIR}/sam_to_bam_log_${start_time}.txt"
 
+    mkdir -p ${bam_dir}
+    mkdir -p ${tmp_dir}
+
     for file in ${files[*]}; do
-        local sample_name=$(basename ${file} _.sam)
+        local sample_name=$(basename ${file} .sam)
         local output="${bam_dir}/${sample_name}.bam"
-        local command="samtools view -bS -q 10 -F 260 ${file} -o ${output}"
+        local command="samtools view -bS -q 10 -F 4 ${file} | samtools sort -o ${output} -"
+        echo "Triggering ${command}"; echo
         queue "${command}" "${command_log}"
-    done
-    process_queue
-}
+        local ret=$?
 
-##
-# Merges multiple bam files into a single bam, one per track.
-#
-# Arguments:
-# This function takes a set of patterns/replacements as its arguments.
-#
-# For each group of lanes, a pattern and replacement must be provided
-# in the form of "pattern#replacement"
-#
-# For example, if the output file is "AB123_Merged.bam" and the list of files constructing this merged is:
-#     AB123_ENTR_1_RT_12.bam
-#     AB123_ENTR_2_RT_12.bam
-#     AB123_ENTR_3_RT_12.bam
-#     AB123_ENTR_4_RT_12.bam
-#
-# then the argument matching this would be: "AB123_*_RT*#AB123_Merged"
-#
-function merge_bam_files()
-{
-    local arguments=($@)
-    local patterns=(
-        $(
-            for pattern in ${arguments[@]}; do
-                echo ${pattern} | cut -d\# -f1
-            done
-        )
-    )
-
-    local replacements=(
-        $(
-            for pattern in ${arguments[@]}; do
-                echo ${pattern} | cut -d\# -f2
-            done
-        )
-    )
-    local bam_merged=${RUN_DIR}/bam_merged
-    local input_dir=${RUN_DIR}/bam_lanewise
-    local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
-    local command_log="${LOG_DIR}/merge_bam_${start_time}.txt"
-
-    for (( i=0; i < ${#patterns[@]}; i++ )); do
-        local pattern="${patterns[$i]}"
-        local replacement="${bam_merged}/${replacements[$i]}.bam"
-        local files=($(ls $input_dir/${pattern}.bam))
-
-        command="samtools merge - ${files[@]} | samtools sort -o ${replacement} -"
-        queue "${command}" "${command_log}"
-        queue "samtools index ${replacement}" "${command_log}" "waitfor=$?"
+        command="samtools index ${bam_dir}/${sample_name}.bam"
+        echo "Triggering ${command}"; echo
+        queue "$command" "${command_log}" "waitfor=${ret}"
     done
     process_queue
 }
@@ -124,16 +89,24 @@ function merge_bam_files()
 function filter()
 {
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
-    local merged_bam=${RUN_DIR}/bam_merged
-    local merged_bam_list=($(ls ${merged_bam}/*.bam))
-    local bam_filtered_dir="${merged_bam}/${FILTERED}"
+    local bam_dir=${RUN_DIR}/01bam
+    local merged_bam_list=($(ls ${bam_dir}/*.bam))
+
+    local filtered_dir=${RUN_DIR}/02filtered
     local command_log="${LOG_DIR}/${FILTERED}${start_time}.log"
     local chromasones="${CHROM_LIST[@]}"
 
+    mkdir -p ${filtered_dir}
     for file in ${merged_bam_list[*]}; do
         name=$(basename $file)
-        queue "samtools view -b ${file} $chromasones | samtools sort -o ${bam_filtered_dir}/${name} -" "${command_log}"
-        queue "samtools index ${bam_filtered_dir}/${name}" "${command_log}" "waitfor=$?"
+
+        command="samtools view -b ${file} $chromasones | samtools sort -o ${filtered_dir}/${name} -"
+        echo "Triggering ${command}"; echo
+        queue "$command" "${command_log}"
+        local ret=$?
+        command="samtools index ${filtered_dir}/${name}"
+        echo "Triggering ${command}"; echo
+        queue "$command" "${command_log}" "waitfor=${ret}"
     done
     process_queue
 }
@@ -146,19 +119,26 @@ function filter()
 function remove_duplicates()
 {
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
-    local merged_bam="${RUN_DIR}/bam_merged/${FILTERED}"
-    local temp_bam_folder="${merged_bam}/de_duped_bam_tmp"
-    local picard_metrics_dir="${temp_bam_folder}/picard_metrics"
+    local filtered_dir=${RUN_DIR}/02filtered
+
+    local unique_dir=${RUN_DIR}/03unique
+    local tmp_dir=${RUN_DIR}/tmp
+
+    local picard_metrics_dir="${unique_dir}/picard_metrics"
     local command_log="${LOG_DIR}/${FILTERED}de-duped_${start_time}.txt"
-    local files=($(ls ${merged_bam}/*.bam))
+
+    local files=($(ls ${filtered_dir}/*.bam))
+    mkdir -p ${unique_dir}
+    mkdir -p ${picard_metrics_dir}
 
     for file in ${files[*]}; do
         local sample_name=$(basename $file .bam)
         local mark_output=${sample_name}_remove_duplicates.bam
-        local output="OUTPUT=${temp_bam_folder}/${mark_output}"
+        local output="OUTPUT=${unique_dir}/${mark_output}"
         local metrics="METRICS_FILE=${picard_metrics_dir}/$(basename ${file}).txt"
 
         local command="java -jar ${PICARD_LOCATION} MarkDuplicates INPUT=${file} ${output} $metrics REMOVE_DUPLICATES=TRUE"
+        echo "Triggering ${command}"; echo
         queue "$command" "${command_log}"
     done
     process_queue
@@ -169,17 +149,20 @@ function macs_pvalue()
     local precision=$1
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
     local command_log=${LOG_DIR}/${FILTERED}/macs_pvalue_${start_time}.txt
-    local bam_merged_dir=${RUN_DIR}/bam_merged/${FILTERED}
-    local de_duped_dir=${bam_merged_dir}/de_duped_bam_tmp
-    local macs_pvalue_dir=${RUN_DIR}/macs_pvalue/${FILTERED}
-    local files=($(ls ${de_duped_dir}/*.bam))
+    local unique_dir=${RUN_DIR}/03unique
+
+    local macs_pvalue_dir=${RUN_DIR}/04macs_pvalue
+    local files=($(ls ${unique_dir}/*.bam))
+
+    mkdir -p ${macs_pvalue_dir}
 
     for file in ${files[*]}; do
-        if echo $file | grep -qi input; then
+        if echo $file | grep -qi ${INPUTFILTER}; then
             continue
         fi
-        local input="${de_duped_dir}/$(ls $de_duped_dir | grep -i input | grep -i $(basename $file | cut -d_ -f1))"
+        local input="${unique_dir}/$(ls ${unique_dir} | grep -i ${INPUTFILTER} | grep -i $(basename $file | cut -d_ -f1))"
         local name=$(basename $file .bam)
+        #local command="macs2 callpeak -t ${file} -c ${input} --format BAM --broad --min-length 2000 --broad-cutoff 0.1 -g mm -n"
         local command="macs2 callpeak -t ${file} -c ${input} --format BAM -g mm -n"
         command="$command ${name}_${precision} --outdir ${macs_pvalue_dir} -p ${precision}"
         queue "${command}" "${command_log}"
@@ -189,14 +172,15 @@ function macs_pvalue()
 
 function remove_blacklist()
 {
-    _blacklist narrowPeak
-    _blacklist summits
-
-    local bed_folder=${RUN_DIR}/macs_pvalue/${FILTERED}
-    local pvalue_clean_folder=${bed_folder}/clean
+    local bed_folder=${RUN_DIR}/04macs_pvalue
+    local pvalue_clean_folder=${RUN_DIR}/05clean
     local xls_list=($(ls ${bed_folder}/*.xls))
     local blacklist=${RUN_DIR}/../${GENOME}/blacklist/${GENOME_VERSION}-blacklist.bed
 
+    mkdir -p ${pvalue_clean_folder}
+
+    _blacklist narrowPeak
+    _blacklist summits
     command_log=${LOG_DIR}/${FILTERED}remove_blacklist_peaks_and_summits_xls_${start_time}.txt
     for file in ${xls_list[*]}; do
         filename=$(basename ${file} .xls)
@@ -231,10 +215,12 @@ function merge_pvalue()
 {
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
     local command_log=${LOG_DIR}/${FILTERED}merge_pvalue_${start_time}.txt
-    local extended_bed_dir=${RUN_DIR}/macs_pvalue/${FILTERED}extended
+    local extended_bed_dir=${RUN_DIR}/06extended
     local known_sizes=${LOCATION}/${GENOME}/${GENOME_VERSION}/${GENOME_VERSION}.chrom.sizes
-    local merge_dir=${RUN_DIR}/merge_pvalue/${FILTERED}
+    local merge_dir=${RUN_DIR}/07merge_pvalue
     local files=($(ls ${extended_bed_dir}/*.bed))
+
+    mkdir -p ${merge_dir}
 
     for file in ${files[*]}; do
         local command="bedtools merge -d ${MERGE_RANGE} -i ${file} > ${merge_dir}/$(basename $file)"
@@ -246,40 +232,44 @@ function merge_pvalue()
 function read_counts()
 {
     echo "Entering read_counts function"
-    local bam_dir=${RUN_DIR}/bam_merged/${FILTERED}
-    local merge_dir=${RUN_DIR}/merge_pvalue/${FILTERED}
+    local bam_dir=${RUN_DIR}/02filtered
+    local merge_dir=${RUN_DIR}/06extended
 
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
-    local read_count=${merge_dir}/read_count
+    local read_count_dir=${RUN_DIR}/08read_count
     local command_log=${LOG_DIR}/${FILTERED}read_counts_${start_time}.txt
     local files=($(ls ${merge_dir}/*.bed))
+
+    mkdir -p ${read_count_dir}
 
     for file in ${files[@]}; do
         if ! echo $file | grep -q peaks ; then
             continue
         fi
         local input_file=$(basename $file _remove_duplicates_${PRECISION}_peaks_extended_${EXTEND_RANGE}.bed)
-        if [ -f ${bam_dir}/${input_file}.bam ] && [ ! -f "${read_count}/${input_file}.txt" ] ; then
+        if [ -f ${bam_dir}/${input_file}.bam ] && [ ! -f "${read_count_dir}/${input_file}.txt" ] ; then
             echo "Creating read counts for ${input_file}" | tee -a ${command_log}
             for peak_value in $(sed 's/\t/:/;s/\t/-/;' ${merge_dir}/$(basename $file)); do
                 echo -n ${peak_value}$'\t'
                 samtools view ${bam_dir}/${input_file}.bam ${peak_value} | wc -l
-            done > ${read_count}/${input_file}.txt
+            done > ${read_count_dir}/${input_file}.txt
         fi
     done
 }
 
 function annotate_read_counts()
 {
-    local merge_dir=${RUN_DIR}/merge_pvalue/${FILTERED}
-    local read_count=${merge_dir}/read_count
-    local annotated=${merge_dir}/annotated
+    local merge_dir=${RUN_DIR}/07merge_pvalue
+    local read_count=${RUN_DIR}/08read_count
+    local annotated=${RUN_DIR}/09annotated
 
     local sorted=${annotated}/sorted
     local partial=${annotated}/part
     local combined=${annotated}/combined
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
     local command_log="${LOG_DIR}/annotate_read_counts_${start_time}.log"
+
+    mkdir -p ${annotated} ${sorted} ${partial} ${combined}
 
     for file in $(ls ${merge_dir}/*_${PRECISION}_peaks_extended_${EXTEND_RANGE}.bed); do
         local command="annotatePeaks.pl $file ${GENOME_VERSION} > ${annotated}/$(basename $file)";
@@ -306,75 +296,14 @@ function annotate_read_counts()
 # Set up the run directory structure
 function create_structure()
 {
-    [ ! -z $FILTERED ] && FILTERED='filtered/'
     mkdir -p ${RUN_DIR}
-
-    [ ! -d ${RUN_DIR}/bam_lanewise ] &&
-        mkdir -p ${RUN_DIR}/bam_lanewise
-
-    [ ! -d ${RUN_DIR}/bam_merged/${FILTERED} ] &&
-        mkdir -p ${RUN_DIR}/bam_merged${FILTERED}
-
-    [ ! -d ${RUN_DIR}/bam_merged/${FILTERED}de_duped_bam_tmp ] &&
-        mkdir -p ${RUN_DIR}/bam_merged/${FILTERED}de_duped_bam_tmp
-
-    [ ! -d ${RUN_DIR}/bam_merged/${FILTERED}de_duped_bam_tmp/picard_metrics ] &&
-        mkdir -p ${RUN_DIR}/bam_merged/${FILTERED}de_duped_bam_tmp/picard_metrics
-
-    [ ! -d ${RUN_DIR}/blacklist/${FILTERED} ] &&
-        mkdir -p ${RUN_DIR}/blacklist/${FILTERED}
-
-    [ ! -d ${RUN_DIR}/log/${FILTERED} ] &&
-        mkdir -p ${RUN_DIR}/log/${FILTERED}
-
-    [ ! -d ${RUN_DIR}/macs_pvalue/${FILTERED} ] &&
-        mkdir -p ${RUN_DIR}/macs_pvalue/${FILTERED}
-
-    [ ! -d ${RUN_DIR}/macs_pvalue/${FILTERED}extended ] &&
-        mkdir -p ${RUN_DIR}/macs_pvalue/${FILTERED}extended
-
-    [ ! -d ${RUN_DIR}/macs_pvalue/${FILTERED}clean ] &&
-        mkdir -p ${RUN_DIR}/macs_pvalue/${FILTERED}clean
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED} ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED}clean ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}clean
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED}extended ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}extended
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED}read_count ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}read_count
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED}annotated ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}annotated
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED}annotated/sorted ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}annotated/sorted
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED}annotated/part ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}annotated/part
-
-    [ ! -d ${RUN_DIR}/merge_pvalue/${FILTERED}annotated/combined ] &&
-        mkdir -p ${RUN_DIR}/merge_pvalue/${FILTERED}annotated/combined
-
-    [ ! -d ${RUN_DIR}/sam ] &&
-        mkdir -p ${RUN_DIR}/sam
-
-    [ ! -d ${RUN_DIR}/scripts ] &&
-        mkdir -p ${RUN_DIR}/scripts
-
-    [ ! -d ${RUN_DIR}/tmp ] &&
-        mkdir -p ${RUN_DIR}/tmp
 }
 
 function _blacklist()
 {
     local peak_type=$1
-    local bed_folder=${RUN_DIR}/macs_pvalue/${FILTERED}
-    local pvalue_clean_folder=${bed_folder}/clean
+    local bed_folder=${RUN_DIR}/04macs_pvalue
+    local pvalue_clean_folder=${RUN_DIR}/05clean
 
     local blacklist=${RUN_DIR}/../${GENOME}/blacklist/${GENOME_VERSION}-blacklist.bed
 
@@ -394,12 +323,14 @@ function _blacklist()
 function _extend()
 {
     local peak_type=$1
-    local bed_dir=${RUN_DIR}/macs_pvalue/${FILTERED}clean
+    local bed_dir=${RUN_DIR}/05clean
     local start_time=$(date +"%Y-%m-%d_%H_%M_%S")
     local command_log=${LOG_DIR}/${FILTERED}extend_${peak_type}_${start_time}.txt
     local known_sizes=${RUN_DIR}/../${GENOME}/${GENOME_VERSION}/${GENOME_VERSION}.chrom.sizes
-    local extended="${bed_dir}/../extended"
+    local extended="${RUN_DIR}/06extended"
     local files=($(ls ${bed_dir}/*_${peak_type}_clean.bed))
+
+    mkdir -p ${RUN_DIR}/06extended
 
     for file in ${files[*]}; do
         local filename=$(basename $file _${peak_type}_clean.bed)
